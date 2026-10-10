@@ -18,11 +18,23 @@ async function api(path, options = {}) {
 function normalize(value) { return String(value || "").trim().toLocaleLowerCase("he"); }
 function createdAscending(a, b) { return new Date(a.createdAt) - new Date(b.createdAt); }
 function dueDateValue(task) { return task.dueDate ? new Date(`${task.dueDate}T00:00:00`).getTime() : Number.POSITIVE_INFINITY; }
-function formatDate(isoDate) { if (!isoDate) return "ללא תאריך"; const [year, month, day] = isoDate.split("-"); return `${day}.${month}.${year}`; }
+function normalizeDate(value) {
+  if (!value) return "";
+  const text = String(value);
+  const isoMatch = text.match(/\d{4}-\d{2}-\d{2}/);
+  if (isoMatch) return isoMatch[0];
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, "0")}-${String(parsed.getUTCDate()).padStart(2, "0")}`;
+}
+function normalizeTask(task) { return { ...task, dueDate: normalizeDate(task.dueDate), archived: task.archived === true || task.archived === "true" || task.archived === 1 }; }
+function formatDate(isoDate) { const normalized = normalizeDate(isoDate); if (!normalized) return "ללא תאריך"; const [year, month, day] = normalized.split("-"); return `${day}.${month}.${year}`; }
 
 function visibleTasks() {
   const query = normalize(state.search);
-  return state.tasks.filter((task) => !task.archived).filter((task) => !query || normalize(`${task.title} ${task.details}`).includes(query));
+  return state.tasks
+    .filter((task) => !task.archived)
+    .filter((task) => !query || normalize(`${task.title} ${task.details}`).includes(query));
 }
 
 function render() {
@@ -48,12 +60,12 @@ function taskRow(task) {
 
 async function addTask(event) {
   event.preventDefault(); const title = elements.titleInput.value.trim(); if (!title) return elements.titleInput.focus();
-  try { const task = await api("/api/tasks", { method: "POST", body: JSON.stringify({ title }) }); state.tasks.push(task); elements.titleInput.value = ""; render(); } catch (error) { showError(error); }
+  try { const task = await api("/api/tasks", { method: "POST", body: JSON.stringify({ title }) }); state.tasks.push(normalizeTask(task)); elements.titleInput.value = ""; render(); } catch (error) { showError(error); }
   elements.titleInput.focus();
 }
 
 async function archiveTask(id) {
-  try { const updated = await api(`/api/tasks/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ archived: true }) }); state.tasks = state.tasks.map((task) => task.id === updated.id ? updated : task); render(); }
+  try { const updated = await api(`/api/tasks/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ archived: true }) }); state.tasks = state.tasks.map((task) => task.id === updated.id ? normalizeTask(updated) : task); render(); }
   catch (error) { showError(error); render(); }
 }
 
@@ -61,7 +73,7 @@ function openEditor(task) { state.editingId = task.id; elements.editTitle.value 
 
 async function saveEditor(event) {
   event.preventDefault(); const title = elements.editTitle.value.trim(); if (!title) return elements.editTitle.focus();
-  try { const updated = await api(`/api/tasks/${encodeURIComponent(state.editingId)}`, { method: "PATCH", body: JSON.stringify({ title, details: elements.editDetails.value.trim(), dueDate: elements.editDueDate.value }) }); state.tasks = state.tasks.map((task) => task.id === updated.id ? updated : task); closeEditor(); render(); }
+  try { const updated = await api(`/api/tasks/${encodeURIComponent(state.editingId)}`, { method: "PATCH", body: JSON.stringify({ title, details: elements.editDetails.value.trim(), dueDate: elements.editDueDate.value }) }); state.tasks = state.tasks.map((task) => task.id === updated.id ? normalizeTask(updated) : task); closeEditor(); render(); }
   catch (error) { showError(error); }
 }
 
@@ -79,7 +91,7 @@ function renderArchive() {
 
 function showError(error) { elements.taskList.replaceChildren(); const message = document.createElement("p"); message.className = "empty-state"; message.textContent = error.message || "לא ניתן להתחבר לשרת"; elements.taskList.append(message); }
 
-async function initialize() { elements.sortSelect.value = state.sort; try { state.tasks = await api("/api/tasks"); render(); } catch (error) { showError(error); } elements.titleInput.focus(); }
+async function initialize() { elements.sortSelect.value = state.sort; try { state.tasks = (await api("/api/tasks")).map(normalizeTask); render(); } catch (error) { showError(error); } elements.titleInput.focus(); }
 
 elements.taskForm.addEventListener("submit", addTask);
 elements.searchInput.addEventListener("input", () => { state.search = elements.searchInput.value; render(); });

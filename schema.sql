@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS tasks (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id UUID PRIMARY KEY,
   title TEXT NOT NULL CHECK (length(trim(title)) > 0),
   details TEXT NOT NULL DEFAULT '',
   due_date DATE NULL,

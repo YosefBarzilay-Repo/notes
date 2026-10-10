@@ -1,4 +1,5 @@
 import http from "node:http";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,7 +8,25 @@ import pg from "pg";
 const { Pool } = pg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT || 4173);
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.POSTGRESQL_URL;
+const pool = new Pool({
+  connectionString: databaseUrl,
+  ssl: process.env.PGSSL === "true" ? { rejectUnauthorized: false } : undefined,
+});
+
+const databaseSchema = `
+  CREATE TABLE IF NOT EXISTS tasks (
+    id UUID PRIMARY KEY,
+    title TEXT NOT NULL CHECK (length(trim(title)) > 0),
+    details TEXT NOT NULL DEFAULT '',
+    due_date DATE NULL,
+    archived BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS tasks_archived_created_at_idx ON tasks (archived, created_at);
+  CREATE INDEX IF NOT EXISTS tasks_due_date_idx ON tasks (due_date);
+`;
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -22,12 +41,24 @@ function sendJson(response, status, body) {
 
 function sendError(response, status, message) { sendJson(response, status, { error: message }); }
 
+function dateOnly(value) {
+  if (!value) return "";
+  if (value instanceof Date) {
+    return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, "0")}-${String(value.getUTCDate()).padStart(2, "0")}`;
+  }
+  const text = String(value);
+  const isoMatch = text.match(/\d{4}-\d{2}-\d{2}/);
+  if (isoMatch) return isoMatch[0];
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? "" : `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, "0")}-${String(parsed.getUTCDate()).padStart(2, "0")}`;
+}
+
 function taskFromRow(row) {
   return {
     id: row.id,
     title: row.title,
     details: row.details,
-    dueDate: row.due_date ? String(row.due_date).slice(0, 10) : "",
+    dueDate: dateOnly(row.due_date),
     archived: row.archived,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -55,7 +86,7 @@ function validateTaskInput(body, partial = false) {
     result.details = String(body.details || "").trim();
   }
   if (!partial || Object.hasOwn(body, "dueDate")) {
-    if (body.dueDate !== "" && body.dueDate !== null && !/^\d{4}-\d{2}-\d{2}$/.test(String(body.dueDate))) throw new Error("Due date must be YYYY-MM-DD");
+    if (body.dueDate !== undefined && body.dueDate !== "" && body.dueDate !== null && !/^\d{4}-\d{2}-\d{2}$/.test(String(body.dueDate))) throw new Error("Due date must be YYYY-MM-DD");
     result.dueDate = body.dueDate || null;
   }
   if (Object.hasOwn(body, "archived")) {
@@ -79,8 +110,8 @@ async function handleApi(request, response, url) {
     if (request.method === "POST" && !id) {
       const input = validateTaskInput(await readJson(request));
       const { rows } = await pool.query(
-        "INSERT INTO tasks (title, details, due_date) VALUES ($1, $2, $3) RETURNING *",
-        [input.title, input.details, input.dueDate],
+        "INSERT INTO tasks (id, title, details, due_date) VALUES ($1, $2, $3, $4) RETURNING *",
+        [randomUUID(), input.title, input.details, input.dueDate],
       );
       return sendJson(response, 201, taskFromRow(rows[0]));
     }
@@ -135,4 +166,20 @@ const server = http.createServer(async (request, response) => {
   return serveStatic(response, url.pathname);
 });
 
-server.listen(port, () => console.log(`Task app listening on http://localhost:${port}`));
+async function start() {
+  if (databaseUrl) {
+    if (/[=:]\/\/(host|user|password)(:|@)/i.test(databaseUrl)) {
+      throw new Error("DATABASE_URL still contains placeholder values. Replace host, user, and password with your real PostgreSQL connection details.");
+    }
+    await pool.query(databaseSchema);
+    console.log("PostgreSQL schema is ready");
+  } else {
+    console.warn("DATABASE_URL is not set; API requests will not have database access");
+  }
+  server.listen(port, () => console.log(`Task app listening on http://localhost:${port}`));
+}
+
+start().catch((error) => {
+  console.error("Could not initialize PostgreSQL:", error.message);
+  process.exitCode = 1;
+});
