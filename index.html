@@ -10,30 +10,28 @@
   <body>
     <main class="app-shell">
       <header class="app-header">
-        <h1>משימות</h1>
+        <h1 id="pageTitle">משימות</h1>
+        <div class="header-tools" aria-label="כלי רשימה">
+          <label class="search-box" for="searchInput">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.4" /><path d="m16 16 4.2 4.2" /></svg>
+            <input id="searchInput" type="search" placeholder="" aria-label="חיפוש" autocomplete="off" enterkeyhint="search" />
+          </label>
+          <label class="sort-control" for="sortSelect">
+            <select id="sortSelect" aria-label="מיון">
+              <option value="created">תאריך יצירה</option>
+              <option value="due">תאריך יעד</option>
+            </select>
+          </label>
+        </div>
         <button id="archiveButton" class="icon-button" type="button" aria-label="ארכיון" title="ארכיון">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h16M6 7.5v11h12v-11M9 11h6M5 4h14v3.5H5z" /></svg>
         </button>
       </header>
 
-      <section class="list-tools" aria-label="כלי רשימה">
-        <label class="search-box" for="searchInput">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.4" /><path d="m16 16 4.2 4.2" /></svg>
-          <input id="searchInput" type="search" placeholder="חיפוש במשימות" autocomplete="off" enterkeyhint="search" />
-        </label>
-        <label class="sort-control" for="sortSelect">
-          <span>מיון:</span>
-          <select id="sortSelect">
-            <option value="created">תאריך יצירה</option>
-            <option value="due">תאריך יעד</option>
-          </select>
-        </label>
-      </section>
-
       <section id="taskList" class="task-list" aria-live="polite"></section>
 
       <form id="taskForm" class="task-entry" autocomplete="off">
-        <input id="taskTitleInput" type="text" maxlength="180" placeholder="מה צריך לעשות?" aria-label="משימה חדשה" />
+        <input id="taskTitleInput" type="text" maxlength="180" placeholder="" aria-label="משימה חדשה" />
         <button type="submit" class="submit-button" aria-label="הוספת משימה" title="הוספת משימה">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6" /></svg>
         </button>
@@ -43,31 +41,19 @@
     <dialog id="editDialog" class="edit-dialog">
       <form id="editForm" method="dialog">
         <div class="dialog-header">
-          <h2>עריכת משימה</h2>
           <button id="closeDialogButton" class="close-button" type="button" aria-label="סגירה">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
           </button>
         </div>
-        <input id="editTitleInput" type="text" maxlength="180" placeholder="כותרת המשימה" aria-label="כותרת המשימה" />
-        <textarea id="editDetailsInput" rows="4" placeholder="פרטים או תיאור" aria-label="פרטים או תיאור"></textarea>
+        <input id="editTitleInput" type="text" maxlength="180" aria-label="כותרת המשימה" />
+        <textarea id="editDetailsInput" rows="4" aria-label="פרטים או תיאור"></textarea>
         <input id="editDueDateInput" type="date" aria-label="תאריך יעד" />
         <div class="dialog-actions">
-          <button id="deleteTaskButton" class="delete-button" type="button">מחיקת משימה</button>
-          <button class="save-button" type="submit">שמירה</button>
-        </div>
-      </form>
-    </dialog>
-
-    <dialog id="archiveDialog" class="edit-dialog">
-      <section>
-        <div class="dialog-header">
-          <h2>ארכיון</h2>
-          <button id="closeArchiveButton" class="close-button" type="button" aria-label="סגירה">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+          <button class="save-button" type="submit" aria-label="שמירה" title="שמירה">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 4v6h8V4M8 16h8" /></svg>
           </button>
         </div>
-        <div id="archiveList" class="archive-list"></div>
-      </section>
+      </form>
     </dialog>
 
     <script src="app.js"></script>

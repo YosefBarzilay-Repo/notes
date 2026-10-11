@@ -17,7 +17,16 @@ Replace `YOUR_POSTGRES_PASSWORD` with the password chosen during PostgreSQL inst
 
 ### Railway
 
-Create a PostgreSQL service in the Railway project and attach it to the app service. Railway provides `DATABASE_URL` automatically. Do not commit a database URL into the repository.
+Create a PostgreSQL service in the Railway project and attach/reference it from the app service:
+
+1. Open the Railway project.
+2. Add a **PostgreSQL** service if one does not exist.
+3. Open the app service → **Variables**.
+4. Add a variable named `DATABASE_URL`.
+5. Use Railway’s **Add Reference** option and select the PostgreSQL service’s `DATABASE_URL` value. It may appear as a reference such as `${{Postgres.DATABASE_URL}}`; choose it from the UI rather than typing the service name manually.
+6. Redeploy the app service.
+
+The deployment log should then show `PostgreSQL schema is ready` instead of `DATABASE_URL is not set`. Do not commit a database URL into the repository.
 
 Set the app service start command to:
 

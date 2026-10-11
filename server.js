@@ -100,6 +100,7 @@ async function handleApi(request, response, url) {
   const parts = url.pathname.split("/").filter(Boolean);
   const id = parts[2];
   if (parts[0] !== "api" || parts[1] !== "tasks" || (id && parts.length !== 3)) return false;
+  if (!databaseUrl) return sendError(response, 503, "DATABASE_URL is not configured on the server");
 
   try {
     if (request.method === "GET" && !id) {
@@ -161,6 +162,7 @@ async function serveStatic(response, pathname) {
 
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
+  if (url.pathname === "/health") return sendJson(response, 200, { ok: true });
   if (url.pathname.startsWith("/api/")) return handleApi(request, response, url);
   if (request.method !== "GET" && request.method !== "HEAD") return sendError(response, 405, "Method not allowed");
   return serveStatic(response, url.pathname);
@@ -176,7 +178,7 @@ async function start() {
   } else {
     console.warn("DATABASE_URL is not set; API requests will not have database access");
   }
-  server.listen(port, () => console.log(`Task app listening on http://localhost:${port}`));
+  server.listen(port, "0.0.0.0", () => console.log(`Task app listening on port ${port}`));
 }
 
 start().catch((error) => {

@@ -1,12 +1,14 @@
 const SORT_KEY = "minimal-hebrew-task-sort";
+const SWIPE_TRIGGER_DISTANCE = 140;
 
-const state = { tasks: [], sort: localStorage.getItem(SORT_KEY) || "created", search: "", editingId: null };
+const state = { tasks: [], sort: localStorage.getItem(SORT_KEY) || "created", search: "", editingId: null, page: window.location.hash === "#archive" ? "archive" : "tasks" };
 const elements = {
   taskList: document.querySelector("#taskList"), taskForm: document.querySelector("#taskForm"), titleInput: document.querySelector("#taskTitleInput"),
+  pageTitle: document.querySelector("#pageTitle"), headerTools: document.querySelector(".header-tools"),
   searchInput: document.querySelector("#searchInput"), sortSelect: document.querySelector("#sortSelect"), editDialog: document.querySelector("#editDialog"),
   editForm: document.querySelector("#editForm"), editTitle: document.querySelector("#editTitleInput"), editDetails: document.querySelector("#editDetailsInput"),
-  editDueDate: document.querySelector("#editDueDateInput"), deleteButton: document.querySelector("#deleteTaskButton"), closeDialog: document.querySelector("#closeDialogButton"),
-  archiveButton: document.querySelector("#archiveButton"), archiveDialog: document.querySelector("#archiveDialog"), archiveList: document.querySelector("#archiveList"), closeArchive: document.querySelector("#closeArchiveButton"),
+  editDueDate: document.querySelector("#editDueDateInput"), closeDialog: document.querySelector("#closeDialogButton"),
+  archiveButton: document.querySelector("#archiveButton"),
 };
 
 async function api(path, options = {}) {
@@ -18,6 +20,7 @@ async function api(path, options = {}) {
 function normalize(value) { return String(value || "").trim().toLocaleLowerCase("he"); }
 function createdAscending(a, b) { return new Date(a.createdAt) - new Date(b.createdAt); }
 function dueDateValue(task) { return task.dueDate ? new Date(`${task.dueDate}T00:00:00`).getTime() : Number.POSITIVE_INFINITY; }
+function taskOrder(a, b) { return state.sort === "created" ? createdAscending(a, b) : dueDateValue(a) - dueDateValue(b) || createdAscending(a, b); }
 function normalizeDate(value) {
   if (!value) return "";
   const text = String(value);
@@ -38,8 +41,16 @@ function visibleTasks() {
 }
 
 function render() {
-  const tasks = visibleTasks().sort((a, b) => state.sort === "created" ? createdAscending(a, b) : dueDateValue(a) - dueDateValue(b) || createdAscending(a, b));
+  elements.pageTitle.textContent = state.page === "archive" ? "ארכיון" : "משימות";
+  elements.headerTools.hidden = false;
+  elements.searchInput.closest(".search-box").hidden = state.page === "archive";
+  elements.taskForm.hidden = state.page === "archive";
+  elements.archiveButton.setAttribute("aria-label", state.page === "archive" ? "חזרה למשימות" : "ארכיון");
+  elements.archiveButton.title = state.page === "archive" ? "חזרה למשימות" : "ארכיון";
+  elements.archiveButton.querySelector("path").setAttribute("d", state.page === "archive" ? "M19 12H5M11 6l-6 6 6 6" : "M4 7.5h16M6 7.5v11h12v-11M9 11h6M5 4h14v3.5H5z");
+  const tasks = visibleTasks().sort(taskOrder);
   elements.taskList.replaceChildren();
+  if (state.page === "archive") return renderArchive();
   if (!tasks.length) { const empty = document.createElement("p"); empty.className = "empty-state"; empty.textContent = state.search ? "לא נמצאו משימות תואמות" : "אין עדיין משימות"; elements.taskList.append(empty); return; }
   if (state.sort === "due") {
     const groups = new Map();
@@ -49,13 +60,14 @@ function render() {
 }
 
 function taskRow(task) {
-  const row = document.createElement("article"); row.className = "task-row"; row.addEventListener("click", () => openEditor(task));
-  const checkbox = document.createElement("input"); checkbox.className = "task-check"; checkbox.type = "checkbox"; checkbox.setAttribute("aria-label", `השלמת ${task.title}`); checkbox.addEventListener("click", (event) => event.stopPropagation()); checkbox.addEventListener("change", () => archiveTask(task.id));
+  const container = document.createElement("div"); container.className = "swipe-container";
+  const action = swipeAction("archive-action", "העברה לארכיון", `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h16M6 7.5v11h12v-11M9 11h6M5 4h14v3.5H5z"/></svg>`);
+  const row = document.createElement("article"); row.className = "task-row"; addSwipeToArchive(container, row, task);
+  row.addEventListener("click", () => openEditor(task));
   const copy = document.createElement("div"); copy.className = "task-copy";
   const title = document.createElement("span"); title.className = "task-title"; title.textContent = task.title; copy.append(title);
-  if (task.details) { const details = document.createElement("span"); details.className = "task-details"; details.textContent = task.details; copy.append(details); }
   if (task.dueDate) { const due = document.createElement("span"); due.className = "task-due"; due.textContent = formatDate(task.dueDate); copy.append(due); }
-  row.append(checkbox, copy); return row;
+  row.append(copy); container.append(action, row); return container;
 }
 
 async function addTask(event) {
@@ -78,26 +90,92 @@ async function saveEditor(event) {
 }
 
 function closeEditor() { state.editingId = null; elements.editDialog.close(); }
-async function deleteEditingTask() {
-  if (!state.editingId) return;
-  try { await api(`/api/tasks/${encodeURIComponent(state.editingId)}`, { method: "DELETE" }); state.tasks = state.tasks.filter((task) => task.id !== state.editingId); closeEditor(); render(); } catch (error) { showError(error); }
+function renderArchive() {
+  const archived = state.tasks.filter((task) => task.archived).sort(taskOrder);
+  if (!archived.length) { const empty = document.createElement("p"); empty.className = "archive-empty"; empty.textContent = "הארכיון ריק"; elements.taskList.append(empty); return; }
+  archived.forEach((task) => { const container = document.createElement("div"); container.className = "swipe-container"; const deleteAction = swipeAction("delete-action", "מחיקה", `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 10v7M14 10v7M7 7l1 13h8l1-13M9 4h6l1 3H8l1-3z"/></svg>`); const restoreAction = swipeAction("restore-action", "החזרה למשימות", `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7v5h5M4.5 12A8 8 0 1 0 7 6.3"/></svg>`); const item = document.createElement("article"); item.className = "archived-row"; addSwipeToDelete(container, item, task); const button = document.createElement("button"); button.type = "button"; button.innerHTML = `<span class="archived-title"></span><span class="archived-meta">${task.dueDate ? formatDate(task.dueDate) : ""}</span>`; button.querySelector(".archived-title").textContent = task.title; button.addEventListener("click", () => openEditor(task)); item.append(button); container.append(deleteAction, restoreAction, item); elements.taskList.append(container); });
 }
 
-function renderArchive() {
-  const archived = state.tasks.filter((task) => task.archived).sort(createdAscending); elements.archiveList.replaceChildren();
-  if (!archived.length) { const empty = document.createElement("p"); empty.className = "archive-empty"; empty.textContent = "הארכיון ריק"; elements.archiveList.append(empty); return; }
-  archived.forEach((task) => { const item = document.createElement("div"); item.className = "archived-row"; const button = document.createElement("button"); button.type = "button"; button.innerHTML = `<span class="archived-title"></span><span class="archived-meta">${task.dueDate ? formatDate(task.dueDate) : "ללא תאריך"}</span>`; button.querySelector(".archived-title").textContent = task.title; button.addEventListener("click", () => { elements.archiveDialog.close(); openEditor(task); }); item.append(button); elements.archiveList.append(item); });
+function swipeAction(className, label, icon) {
+  const action = document.createElement("div"); action.className = `swipe-action ${className}`; action.setAttribute("aria-label", label); action.innerHTML = icon; return action;
+}
+
+function addSwipeToArchive(container, row, task) {
+  let startX = 0; let startY = 0; let swiping = false;
+  container.addEventListener("pointerdown", (event) => { startX = event.clientX; startY = event.clientY; swiping = false; container.setPointerCapture?.(event.pointerId); });
+  container.addEventListener("pointermove", (event) => {
+    const deltaX = Math.max(-180, Math.min(0, event.clientX - startX)); const deltaY = event.clientY - startY;
+    if (Math.abs(deltaX) > 8 && Math.abs(deltaX) > Math.abs(deltaY)) { swiping = true; container.classList.add("swiping-left"); container.style.setProperty("--swipe-distance", `${deltaX}px`); container.querySelector(".archive-action").style.opacity = String(Math.min(1, Math.abs(deltaX) / 60)); }
+  });
+  container.addEventListener("pointerup", async (event) => {
+    const deltaX = event.clientX - startX; const deltaY = event.clientY - startY;
+    container.style.removeProperty("--swipe-distance"); container.classList.remove("swiping-left"); container.querySelector(".archive-action").style.removeProperty("opacity");
+    if (deltaX <= -SWIPE_TRIGGER_DISTANCE && Math.abs(deltaX) > Math.abs(deltaY)) { swiping = true; await archiveTask(task.id); }
+    else swiping = false;
+  });
+  container.addEventListener("pointercancel", () => { container.style.removeProperty("--swipe-distance"); container.classList.remove("swiping-left"); container.querySelector(".archive-action").style.removeProperty("opacity"); swiping = false; });
+  container.addEventListener("click", (event) => { if (swiping) { event.stopImmediatePropagation(); swiping = false; } }, true);
+}
+
+function addSwipeToDelete(container, row, task) {
+  let startX = 0; let startY = 0; let swiping = false;
+  container.addEventListener("pointerdown", (event) => { startX = event.clientX; startY = event.clientY; swiping = false; container.setPointerCapture?.(event.pointerId); });
+  container.addEventListener("pointermove", (event) => {
+    const deltaX = Math.max(-180, Math.min(180, event.clientX - startX)); const deltaY = event.clientY - startY;
+    if (Math.abs(deltaX) > 8 && Math.abs(deltaX) > Math.abs(deltaY)) { swiping = true; container.classList.toggle("swiping-left", deltaX < 0); container.classList.toggle("swiping-right", deltaX > 0); container.style.setProperty("--swipe-distance", `${deltaX}px`); container.querySelector(".delete-action").style.opacity = deltaX < 0 ? String(Math.min(1, Math.abs(deltaX) / 60)) : "0"; container.querySelector(".restore-action").style.opacity = deltaX > 0 ? String(Math.min(1, deltaX / 60)) : "0"; }
+  });
+  container.addEventListener("pointerup", async (event) => {
+    const deltaX = event.clientX - startX; const deltaY = event.clientY - startY;
+    container.style.removeProperty("--swipe-distance"); container.classList.remove("swiping-left", "swiping-right"); container.querySelector(".delete-action").style.removeProperty("opacity"); container.querySelector(".restore-action").style.removeProperty("opacity");
+    if (deltaX <= -SWIPE_TRIGGER_DISTANCE && Math.abs(deltaX) > Math.abs(deltaY)) { swiping = true; try { await api(`/api/tasks/${encodeURIComponent(task.id)}`, { method: "DELETE" }); state.tasks = state.tasks.filter((item) => item.id !== task.id); render(); } catch (error) { showError(error); } }
+    else if (deltaX >= SWIPE_TRIGGER_DISTANCE && Math.abs(deltaX) > Math.abs(deltaY)) { swiping = true; try { const updated = await api(`/api/tasks/${encodeURIComponent(task.id)}`, { method: "PATCH", body: JSON.stringify({ archived: false }) }); state.tasks = state.tasks.map((item) => item.id === task.id ? { ...item, ...normalizeTask(updated), archived: false } : item); render(); } catch (error) { showError(error); } }
+    else swiping = false;
+  });
+  container.addEventListener("pointercancel", () => { container.style.removeProperty("--swipe-distance"); container.classList.remove("swiping-left", "swiping-right"); container.querySelector(".delete-action").style.removeProperty("opacity"); container.querySelector(".restore-action").style.removeProperty("opacity"); swiping = false; });
+  container.addEventListener("click", (event) => { if (swiping) { event.stopImmediatePropagation(); swiping = false; } }, true);
 }
 
 function showError(error) { elements.taskList.replaceChildren(); const message = document.createElement("p"); message.className = "empty-state"; message.textContent = error.message || "לא ניתן להתחבר לשרת"; elements.taskList.append(message); }
 
-async function initialize() { elements.sortSelect.value = state.sort; try { state.tasks = (await api("/api/tasks")).map(normalizeTask); render(); } catch (error) { showError(error); } elements.titleInput.focus(); }
+async function loadTasks() { state.tasks = (await api("/api/tasks")).map(normalizeTask); render(); }
+async function initialize() { elements.sortSelect.value = state.sort; try { await loadTasks(); } catch (error) { showError(error); } elements.titleInput.focus(); }
 
 elements.taskForm.addEventListener("submit", addTask);
 elements.searchInput.addEventListener("input", () => { state.search = elements.searchInput.value; render(); });
 elements.sortSelect.addEventListener("change", () => { state.sort = elements.sortSelect.value; localStorage.setItem(SORT_KEY, state.sort); render(); });
-elements.editForm.addEventListener("submit", saveEditor); elements.deleteButton.addEventListener("click", deleteEditingTask); elements.closeDialog.addEventListener("click", closeEditor);
+elements.editDetails.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && elements.editDetails.selectionStart === elements.editDetails.selectionEnd) {
+    const cursor = elements.editDetails.selectionStart;
+    const value = elements.editDetails.value;
+    const lineStart = value.lastIndexOf("\n", cursor - 1) + 1;
+    const linePrefix = value.slice(lineStart, cursor);
+    const marker = linePrefix.match(/^(\s*)(•|\d+\.)\s/);
+    if (marker) {
+      const nextMarker = marker[2] === "•" ? "• " : `${Number.parseInt(marker[2], 10) + 1}. `;
+      const insertion = `\n${marker[1]}${nextMarker}`;
+      elements.editDetails.value = `${value.slice(0, cursor)}${insertion}${value.slice(cursor)}`;
+      const nextCursor = cursor + insertion.length;
+      elements.editDetails.setSelectionRange(nextCursor, nextCursor);
+      event.preventDefault();
+    }
+    return;
+  }
+  if (event.key !== " " || elements.editDetails.selectionStart !== elements.editDetails.selectionEnd) return;
+  const cursor = elements.editDetails.selectionStart;
+  const lineStart = elements.editDetails.value.lastIndexOf("\n", cursor - 1) + 1;
+  const linePrefix = elements.editDetails.value.slice(lineStart, cursor);
+  const marker = linePrefix.match(/^(\s*)([-*]|\d+\.?)$/);
+  if (!marker) return;
+  const indent = marker[1];
+  const replacement = /^[-*]$/.test(marker[2]) ? "• " : `${marker[2].replace(/\.$/, "")}. `;
+  const value = elements.editDetails.value;
+  elements.editDetails.value = `${value.slice(0, lineStart)}${indent}${replacement}${value.slice(cursor)}`;
+  const nextCursor = lineStart + indent.length + replacement.length;
+  elements.editDetails.setSelectionRange(nextCursor, nextCursor);
+  event.preventDefault();
+});
+elements.editForm.addEventListener("submit", saveEditor); elements.closeDialog.addEventListener("click", closeEditor);
 elements.editDialog.addEventListener("click", (event) => { if (event.target === elements.editDialog) closeEditor(); });
-elements.archiveButton.addEventListener("click", () => { renderArchive(); elements.archiveDialog.showModal(); }); elements.closeArchive.addEventListener("click", () => elements.archiveDialog.close());
-elements.archiveDialog.addEventListener("click", (event) => { if (event.target === elements.archiveDialog) elements.archiveDialog.close(); });
+elements.archiveButton.addEventListener("click", async () => { state.page = state.page === "archive" ? "tasks" : "archive"; window.history.pushState({}, "", state.page === "archive" ? "#archive" : window.location.pathname); if (state.page === "tasks") { try { await loadTasks(); } catch (error) { showError(error); } } else render(); });
+window.addEventListener("popstate", () => { state.page = window.location.hash === "#archive" ? "archive" : "tasks"; render(); });
 initialize();
