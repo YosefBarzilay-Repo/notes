@@ -1,10 +1,12 @@
 const SORT_KEY = "minimal-hebrew-task-sort";
 const SWIPE_TRIGGER_DISTANCE = 140;
+const dueTimers = new Map();
+const NOTIFIED_DUE_KEY = "minimal-hebrew-task-notified-due";
 
 const state = { tasks: [], sort: localStorage.getItem(SORT_KEY) || "created", search: "", editingId: null, page: window.location.hash === "#archive" ? "archive" : "tasks" };
 const elements = {
   taskList: document.querySelector("#taskList"), taskForm: document.querySelector("#taskForm"), titleInput: document.querySelector("#taskTitleInput"),
-  menuButton: document.querySelector("#menuButton"), sideMenu: document.querySelector("#sideMenu"), menuBackdrop: document.querySelector("#menuBackdrop"), closeMenuButton: document.querySelector("#closeMenuButton"), menuItems: document.querySelectorAll(".menu-item"), headerTools: document.querySelector(".header-tools"),
+  menuButton: document.querySelector("#menuButton"), sideMenu: document.querySelector("#sideMenu"), menuBackdrop: document.querySelector("#menuBackdrop"), closeMenuButton: document.querySelector("#closeMenuButton"), menuItems: document.querySelectorAll(".menu-item[data-page]"), notificationsButton: document.querySelector("#notificationsButton"), headerTools: document.querySelector(".header-tools"),
   searchInput: document.querySelector("#searchInput"), sortSelect: document.querySelector("#sortSelect"), editDialog: document.querySelector("#editDialog"),
   editForm: document.querySelector("#editForm"), editTitle: document.querySelector("#editTitleInput"), editDetails: document.querySelector("#editDetailsInput"),
   editDueDate: document.querySelector("#editDueDateInput"), closeDialog: document.querySelector("#closeDialogButton"),
@@ -33,6 +35,39 @@ function normalizeDateTime(value) { if (!value) return ""; const text = String(v
 function normalizeTask(task) { return { ...task, dueDate: normalizeDateTime(task.dueDate), archived: task.archived === true || task.archived === "true" || task.archived === 1 }; }
 function formatDate(isoDate) { const normalized = normalizeDateTime(isoDate); if (!normalized) return "ללא תאריך"; const [date, time] = normalized.split("T"); const [year, month, day] = date.split("-"); return `${day}.${month}.${year}${time ? ` ${time}` : ""}`; }
 
+function dueTimestamp(task) { if (!task.dueDate) return Number.NaN; const value = task.dueDate.length === 10 ? `${task.dueDate}T00:00` : task.dueDate; return new Date(value).getTime(); }
+function notifiedDue() { try { return JSON.parse(localStorage.getItem(NOTIFIED_DUE_KEY) || "{}"); } catch { return {}; } }
+function markDueNotified(task) { const notified = notifiedDue(); notified[task.id] = task.dueDate; localStorage.setItem(NOTIFIED_DUE_KEY, JSON.stringify(notified)); }
+async function notifyDueTask(task) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  const registration = await navigator.serviceWorker?.ready;
+  if (registration?.showNotification) await registration.showNotification("הגיע הזמן למשימה", { body: task.title, tag: `task-${task.id}`, icon: "icons/icon.svg", data: { url: "./" } });
+  else new Notification("הגיע הזמן למשימה", { body: task.title, tag: `task-${task.id}` });
+  markDueNotified(task);
+}
+function scheduleDueNotifications() {
+  dueTimers.forEach((timer) => clearTimeout(timer)); dueTimers.clear();
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  const notified = notifiedDue();
+  state.tasks.filter((task) => !task.archived && task.dueDate).forEach((task) => {
+    const dueAt = dueTimestamp(task);
+    if (Number.isNaN(dueAt) || notified[task.id] === task.dueDate) return;
+    const delay = dueAt - Date.now();
+    const timer = setTimeout(() => { notifyDueTask(task); dueTimers.delete(task.id); }, Math.max(0, Math.min(delay, 2147483647)));
+    dueTimers.set(task.id, timer);
+  });
+}
+function updateNotificationButton() {
+  if (!("Notification" in window)) return elements.notificationsButton.querySelector("span").textContent = "התראות לא נתמכות";
+  elements.notificationsButton.querySelector("span").textContent = Notification.permission === "granted" ? "התראות פעילות" : "הפעלת התראות";
+}
+async function enableNotifications() {
+  if (!("Notification" in window)) return updateNotificationButton();
+  const permission = await Notification.requestPermission();
+  updateNotificationButton();
+  if (permission === "granted") scheduleDueNotifications();
+}
+
 function visibleTasks() {
   const query = normalize(state.search);
   return state.tasks
@@ -41,6 +76,7 @@ function visibleTasks() {
 }
 
 function render() {
+  scheduleDueNotifications();
   elements.headerTools.hidden = false;
   elements.searchInput.closest(".search-box").hidden = state.page === "archive";
   elements.taskForm.hidden = state.page === "archive";
@@ -180,6 +216,8 @@ elements.menuButton.addEventListener("click", () => elements.sideMenu.classList.
 elements.closeMenuButton.addEventListener("click", closeMenu);
 elements.menuBackdrop.addEventListener("click", closeMenu);
 elements.menuItems.forEach((item) => item.addEventListener("click", () => selectPage(item.dataset.page)));
+elements.notificationsButton.addEventListener("click", enableNotifications);
+updateNotificationButton();
 window.addEventListener("keydown", (event) => { if (event.key === "Escape") closeMenu(); });
 window.addEventListener("popstate", () => { state.page = window.location.hash === "#archive" ? "archive" : "tasks"; render(); });
 if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));

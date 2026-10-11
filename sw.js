@@ -28,3 +28,11 @@ self.addEventListener("fetch", (event) => {
     return response;
   }).catch(() => caches.match(event.request).then((response) => response || caches.match("./index.html"))));
 });
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+    const existing = windows.find((window) => "focus" in window);
+    return existing ? existing.focus() : clients.openWindow(event.notification.data?.url || "./");
+  }));
+});
