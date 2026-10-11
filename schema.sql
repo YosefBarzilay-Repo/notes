@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   id UUID PRIMARY KEY,
   title TEXT NOT NULL CHECK (length(trim(title)) > 0),
   details TEXT NOT NULL DEFAULT '',
-  due_date DATE NULL,
+  due_date TIMESTAMP NULL,
   archived BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

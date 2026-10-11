@@ -19,7 +19,7 @@ const databaseSchema = `
     id UUID PRIMARY KEY,
     title TEXT NOT NULL CHECK (length(trim(title)) > 0),
     details TEXT NOT NULL DEFAULT '',
-    due_date DATE NULL,
+    due_date TIMESTAMP NULL,
     archived BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -44,16 +44,13 @@ function sendJson(response, status, body) {
 
 function sendError(response, status, message) { sendJson(response, status, { error: message }); }
 
-function dateOnly(value) {
+function dateTimeValue(value) {
   if (!value) return "";
   if (value instanceof Date) {
-    return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, "0")}-${String(value.getUTCDate()).padStart(2, "0")}`;
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}T${String(value.getHours()).padStart(2, "0")}:${String(value.getMinutes()).padStart(2, "0")}`;
   }
-  const text = String(value);
-  const isoMatch = text.match(/\d{4}-\d{2}-\d{2}/);
-  if (isoMatch) return isoMatch[0];
-  const parsed = new Date(text);
-  return Number.isNaN(parsed.getTime()) ? "" : `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, "0")}-${String(parsed.getUTCDate()).padStart(2, "0")}`;
+  const match = String(value).replace(" ", "T").match(/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2})?/);
+  return match ? match[0] : "";
 }
 
 function taskFromRow(row) {
@@ -61,7 +58,7 @@ function taskFromRow(row) {
     id: row.id,
     title: row.title,
     details: row.details,
-    dueDate: dateOnly(row.due_date),
+    dueDate: dateTimeValue(row.due_date),
     archived: row.archived,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -89,7 +86,7 @@ function validateTaskInput(body, partial = false) {
     result.details = String(body.details || "").trim();
   }
   if (!partial || Object.hasOwn(body, "dueDate")) {
-    if (body.dueDate !== undefined && body.dueDate !== "" && body.dueDate !== null && !/^\d{4}-\d{2}-\d{2}$/.test(String(body.dueDate))) throw new Error("Due date must be YYYY-MM-DD");
+    if (body.dueDate !== undefined && body.dueDate !== "" && body.dueDate !== null && !/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/.test(String(body.dueDate))) throw new Error("Due date must be YYYY-MM-DD or YYYY-MM-DDTHH:mm");
     result.dueDate = body.dueDate || null;
   }
   if (Object.hasOwn(body, "archived")) {
@@ -177,6 +174,7 @@ async function start() {
       throw new Error("DATABASE_URL still contains placeholder values. Replace host, user, and password with your real PostgreSQL connection details.");
     }
     await pool.query(databaseSchema);
+    await pool.query("ALTER TABLE tasks ALTER COLUMN due_date TYPE TIMESTAMP USING due_date::timestamp");
     console.log("PostgreSQL schema is ready");
   } else {
     console.warn("DATABASE_URL is not set; API requests will not have database access");

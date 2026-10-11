@@ -18,7 +18,7 @@ async function api(path, options = {}) {
 
 function normalize(value) { return String(value || "").trim().toLocaleLowerCase("he"); }
 function createdAscending(a, b) { return new Date(a.createdAt) - new Date(b.createdAt); }
-function dueDateValue(task) { return task.dueDate ? new Date(`${task.dueDate}T00:00:00`).getTime() : Number.POSITIVE_INFINITY; }
+function dueDateValue(task) { return task.dueDate ? new Date(task.dueDate.length === 10 ? `${task.dueDate}T00:00:00` : task.dueDate).getTime() : Number.POSITIVE_INFINITY; }
 function taskOrder(a, b) { return state.sort === "created" ? createdAscending(a, b) : dueDateValue(a) - dueDateValue(b) || createdAscending(a, b); }
 function normalizeDate(value) {
   if (!value) return "";
@@ -29,8 +29,9 @@ function normalizeDate(value) {
   if (Number.isNaN(parsed.getTime())) return "";
   return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, "0")}-${String(parsed.getUTCDate()).padStart(2, "0")}`;
 }
-function normalizeTask(task) { return { ...task, dueDate: normalizeDate(task.dueDate), archived: task.archived === true || task.archived === "true" || task.archived === 1 }; }
-function formatDate(isoDate) { const normalized = normalizeDate(isoDate); if (!normalized) return "ללא תאריך"; const [year, month, day] = normalized.split("-"); return `${day}.${month}.${year}`; }
+function normalizeDateTime(value) { if (!value) return ""; const text = String(value).replace(" ", "T"); const match = text.match(/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2})?/); return match ? match[0] : ""; }
+function normalizeTask(task) { return { ...task, dueDate: normalizeDateTime(task.dueDate), archived: task.archived === true || task.archived === "true" || task.archived === 1 }; }
+function formatDate(isoDate) { const normalized = normalizeDateTime(isoDate); if (!normalized) return "ללא תאריך"; const [date, time] = normalized.split("T"); const [year, month, day] = date.split("-"); return `${day}.${month}.${year}${time ? ` ${time}` : ""}`; }
 
 function visibleTasks() {
   const query = normalize(state.search);
@@ -49,7 +50,7 @@ function render() {
   if (!tasks.length) { const empty = document.createElement("p"); empty.className = "empty-state"; empty.textContent = state.search ? "לא נמצאו משימות תואמות" : "אין עדיין משימות"; elements.taskList.append(empty); return; }
   if (state.sort === "due") {
     const groups = new Map();
-    tasks.forEach((task) => { const key = task.dueDate || ""; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(task); });
+    tasks.forEach((task) => { const key = task.dueDate ? task.dueDate.slice(0, 10) : ""; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(task); });
     groups.forEach((group, dueDate) => { const heading = document.createElement("div"); heading.className = "date-heading"; heading.textContent = formatDate(dueDate); elements.taskList.append(heading); group.forEach((task) => elements.taskList.append(taskRow(task))); });
   } else tasks.forEach((task) => elements.taskList.append(taskRow(task)));
 }
@@ -76,7 +77,7 @@ async function archiveTask(id) {
   catch (error) { showError(error); render(); }
 }
 
-function openEditor(task) { state.editingId = task.id; elements.editTitle.value = task.title; elements.editDetails.value = task.details || ""; elements.editDueDate.value = task.dueDate || ""; elements.editDialog.showModal(); elements.editTitle.focus(); }
+function openEditor(task) { state.editingId = task.id; elements.editTitle.value = task.title; elements.editDetails.value = task.details || ""; elements.editDueDate.value = task.dueDate ? (task.dueDate.length === 10 ? `${task.dueDate}T00:00` : task.dueDate) : ""; elements.editDialog.showModal(); elements.editTitle.focus(); }
 
 async function saveEditor(event) {
   event.preventDefault(); const title = elements.editTitle.value.trim(); if (!title) return elements.editTitle.focus();
