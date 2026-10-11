@@ -41,7 +41,11 @@ function visibleTasks() {
 }
 
 function render() {
-  elements.pageTitle.textContent = state.page === "archive" ? "ארכיון" : "משימות";
+  const pageLabel = state.page === "archive" ? "ארכיון" : "משימות";
+  elements.pageTitle.setAttribute("aria-label", pageLabel);
+  elements.pageTitle.innerHTML = state.page === "archive"
+    ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h16M6 7.5v11h12v-11M9 11h6M5 4h14v3.5H5z" /></svg>`
+    : `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 9h8M8 13h8M8 17h5" /></svg>`;
   elements.headerTools.hidden = false;
   elements.searchInput.closest(".search-box").hidden = state.page === "archive";
   elements.taskForm.hidden = state.page === "archive";
@@ -178,4 +182,5 @@ elements.editForm.addEventListener("submit", saveEditor); elements.closeDialog.a
 elements.editDialog.addEventListener("click", (event) => { if (event.target === elements.editDialog) closeEditor(); });
 elements.archiveButton.addEventListener("click", async () => { state.page = state.page === "archive" ? "tasks" : "archive"; window.history.pushState({}, "", state.page === "archive" ? "#archive" : window.location.pathname); if (state.page === "tasks") { try { await loadTasks(); } catch (error) { showError(error); } } else render(); });
 window.addEventListener("popstate", () => { state.page = window.location.hash === "#archive" ? "archive" : "tasks"; render(); });
+if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 initialize();
