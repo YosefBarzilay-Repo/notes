@@ -4,11 +4,10 @@ const SWIPE_TRIGGER_DISTANCE = 140;
 const state = { tasks: [], sort: localStorage.getItem(SORT_KEY) || "created", search: "", editingId: null, page: window.location.hash === "#archive" ? "archive" : "tasks" };
 const elements = {
   taskList: document.querySelector("#taskList"), taskForm: document.querySelector("#taskForm"), titleInput: document.querySelector("#taskTitleInput"),
-  pageTitle: document.querySelector("#pageTitle"), headerTools: document.querySelector(".header-tools"),
+  menuButton: document.querySelector("#menuButton"), sideMenu: document.querySelector("#sideMenu"), menuBackdrop: document.querySelector("#menuBackdrop"), closeMenuButton: document.querySelector("#closeMenuButton"), menuItems: document.querySelectorAll(".menu-item"), headerTools: document.querySelector(".header-tools"),
   searchInput: document.querySelector("#searchInput"), sortSelect: document.querySelector("#sortSelect"), editDialog: document.querySelector("#editDialog"),
   editForm: document.querySelector("#editForm"), editTitle: document.querySelector("#editTitleInput"), editDetails: document.querySelector("#editDetailsInput"),
   editDueDate: document.querySelector("#editDueDateInput"), closeDialog: document.querySelector("#closeDialogButton"),
-  archiveButton: document.querySelector("#archiveButton"),
 };
 
 async function api(path, options = {}) {
@@ -41,17 +40,9 @@ function visibleTasks() {
 }
 
 function render() {
-  const pageLabel = state.page === "archive" ? "ארכיון" : "משימות";
-  elements.pageTitle.setAttribute("aria-label", pageLabel);
-  elements.pageTitle.innerHTML = state.page === "archive"
-    ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h16M6 7.5v11h12v-11M9 11h6M5 4h14v3.5H5z" /></svg>`
-    : `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 9h8M8 13h8M8 17h5" /></svg>`;
   elements.headerTools.hidden = false;
   elements.searchInput.closest(".search-box").hidden = state.page === "archive";
   elements.taskForm.hidden = state.page === "archive";
-  elements.archiveButton.setAttribute("aria-label", state.page === "archive" ? "חזרה למשימות" : "ארכיון");
-  elements.archiveButton.title = state.page === "archive" ? "חזרה למשימות" : "ארכיון";
-  elements.archiveButton.querySelector("path").setAttribute("d", state.page === "archive" ? "M19 12H5M11 6l-6 6 6 6" : "M4 7.5h16M6 7.5v11h12v-11M9 11h6M5 4h14v3.5H5z");
   const tasks = visibleTasks().sort(taskOrder);
   elements.taskList.replaceChildren();
   if (state.page === "archive") return renderArchive();
@@ -141,6 +132,10 @@ function addSwipeToDelete(container, row, task) {
 
 function showError(error) { elements.taskList.replaceChildren(); const message = document.createElement("p"); message.className = "empty-state"; message.textContent = error.message || "לא ניתן להתחבר לשרת"; elements.taskList.append(message); }
 
+function closeMenu() { elements.sideMenu.classList.remove("open"); elements.sideMenu.setAttribute("aria-hidden", "true"); elements.menuButton.setAttribute("aria-expanded", "false"); elements.menuBackdrop.hidden = true; }
+function openMenu() { elements.sideMenu.classList.add("open"); elements.sideMenu.setAttribute("aria-hidden", "false"); elements.menuButton.setAttribute("aria-expanded", "true"); elements.menuBackdrop.hidden = false; }
+async function selectPage(page) { state.page = page; window.history.pushState({}, "", state.page === "archive" ? "#archive" : window.location.pathname); closeMenu(); if (state.page === "tasks") { try { await loadTasks(); } catch (error) { showError(error); } } else render(); }
+
 async function loadTasks() { state.tasks = (await api("/api/tasks")).map(normalizeTask); render(); }
 async function initialize() { elements.sortSelect.value = state.sort; try { await loadTasks(); } catch (error) { showError(error); } elements.titleInput.focus(); }
 
@@ -180,7 +175,11 @@ elements.editDetails.addEventListener("keydown", (event) => {
 });
 elements.editForm.addEventListener("submit", saveEditor); elements.closeDialog.addEventListener("click", closeEditor);
 elements.editDialog.addEventListener("click", (event) => { if (event.target === elements.editDialog) closeEditor(); });
-elements.archiveButton.addEventListener("click", async () => { state.page = state.page === "archive" ? "tasks" : "archive"; window.history.pushState({}, "", state.page === "archive" ? "#archive" : window.location.pathname); if (state.page === "tasks") { try { await loadTasks(); } catch (error) { showError(error); } } else render(); });
+elements.menuButton.addEventListener("click", () => elements.sideMenu.classList.contains("open") ? closeMenu() : openMenu());
+elements.closeMenuButton.addEventListener("click", closeMenu);
+elements.menuBackdrop.addEventListener("click", closeMenu);
+elements.menuItems.forEach((item) => item.addEventListener("click", () => selectPage(item.dataset.page)));
+window.addEventListener("keydown", (event) => { if (event.key === "Escape") closeMenu(); });
 window.addEventListener("popstate", () => { state.page = window.location.hash === "#archive" ? "archive" : "tasks"; render(); });
 if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 initialize();
